@@ -4,11 +4,46 @@
 
 #include <algorithm>
 #include <cassert>
+#include <cstddef>
 
 #include "torrent/exceptions.h"
 #include "torrent/utils/chrono.h"
 
 namespace torrent::utils {
+
+static constexpr auto compare = [](const SchedulerEntry* a, const SchedulerEntry* b) {
+  return a->time() > b->time();
+};
+
+// Sift element at `pos` upward in the heap [first, first+pos+1)
+static void sift_up(Scheduler::iterator first, size_t pos) {
+  auto value = std::move(first[pos]);
+  while (pos > 0) {
+    size_t parent = (pos - 1) / 2;
+    if (!compare(value, first[parent]))
+      break;
+    first[pos] = std::move(first[parent]);
+    pos = parent;
+  }
+  first[pos] = std::move(value);
+}
+
+// Sift element at `pos` downward in the heap [first, first+size)
+static void sift_down(Scheduler::iterator first, size_t size, size_t pos) {
+  auto value = std::move(first[pos]);
+  while (true) {
+    size_t child = 2 * pos + 1;
+    if (child >= size)
+      break;
+    if (child + 1 < size && compare(first[child + 1], first[child]))
+      child++;
+    if (!compare(first[child], value))
+      break;
+    first[pos] = std::move(first[child]);
+    pos = child;
+  }
+  first[pos] = std::move(value);
+}
 
 SchedulerEntry::~SchedulerEntry() {
   assert(!is_scheduled() && "SchedulerEntry::~SchedulerEntry() called on a scheduled item.");
@@ -22,16 +57,12 @@ SchedulerEntry::~SchedulerEntry() {
 
 inline void
 Scheduler::make_heap() {
-  std::make_heap(begin(), end(), [](const SchedulerEntry* a, const SchedulerEntry* b) {
-      return a->time() > b->time();
-    });
+  std::make_heap(begin(), end(), compare);
 }
 
 inline void
 Scheduler::push_heap() {
-  std::push_heap(begin(), end(), [](const SchedulerEntry* a, const SchedulerEntry* b) {
-      return a->time() > b->time();
-    });
+  std::push_heap(begin(), end(), compare);
 }
 
 Scheduler::time_type
@@ -68,8 +99,17 @@ Scheduler::erase(SchedulerEntry* entry) {
   entry->set_scheduler(nullptr);
   entry->set_time(Scheduler::time_type{});
 
-  base_type::erase(itr);
-  make_heap();
+  auto pos = static_cast<size_t>(std::distance(begin(), itr));
+  auto sz  = size();
+
+  if (pos + 1 < sz) {
+    base_type::operator[](pos) = std::move(base_type::operator[](sz - 1));
+    base_type::pop_back();
+    sift_up(begin(), pos);
+    sift_down(begin(), size(), pos);
+  } else {
+    base_type::pop_back();
+  }
 }
 
 void
@@ -128,8 +168,27 @@ Scheduler::update_wait_until(SchedulerEntry* entry, Scheduler::time_type time) {
     if (entry->scheduler() != this)
       throw torrent::internal_error("Scheduler::update_wait(...) called on an entry that is in another scheduler.");
 
+    auto old_time = entry->time();
+
     entry->set_time(time);
-    make_heap();
+
+    // Find position and sift instead of O(N) make_heap()
+    auto itr = std::find(begin(), end(), entry);
+    if (itr == end()) {
+      // Entry was removed from heap (e.g. by reentrant call), treat as new.
+      entry->set_scheduler(this);
+      entry->set_time(time);
+      base_type::push_back(entry);
+      push_heap();
+      return;
+    }
+    auto pos = static_cast<size_t>(std::distance(begin(), itr));
+
+    if (time < old_time)
+      sift_up(begin(), pos);
+    else if (time > old_time)
+      sift_down(begin(), size(), pos);
+
     return;
   }
 
@@ -158,13 +217,17 @@ Scheduler::update_wait_for_ceil_seconds(SchedulerEntry* entry, Scheduler::time_t
 
 void
 Scheduler::perform(Scheduler::time_type current_time) {
-  while (!empty() && base_type::front()->time() <= current_time) {
-    auto entry = base_type::front();
+  while (!empty() && base_type::operator[](0)->time() <= current_time) {
+    auto entry = base_type::operator[](0);
+    assert(entry != nullptr);
 
-    std::pop_heap(begin(), end(), [](const SchedulerEntry* a, const SchedulerEntry* b) {
-        return a->time() > b->time();
-      });
-    base_type::pop_back();
+    if (size() > 1) {
+      base_type::operator[](0) = std::move(base_type::operator[](size() - 1));
+      base_type::pop_back();
+      sift_down(begin(), size(), 0);
+    } else {
+      base_type::pop_back();
+    }
 
     entry->set_scheduler(nullptr);
     entry->set_time(Scheduler::time_type{});
