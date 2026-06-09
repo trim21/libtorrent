@@ -74,6 +74,7 @@ HashTorrent::confirm_checked() {
 
 void
 HashTorrent::receive_chunkdone(uint32_t index) {
+  fprintf(stderr, "[hash] chunkdone idx=%u outstanding=%d\n", index, m_outstanding);
   LT_LOG_THIS(DEBUG, "received chunk done: index:%" PRIu32 " outstanding:%i.", index, m_outstanding);
 
   if (m_outstanding <= 0)
@@ -108,6 +109,7 @@ HashTorrent::receive_chunk_cleared(uint32_t index) {
 
 void
 HashTorrent::queue(bool quick) {
+  fprintf(stderr, "[hash] queue pos=%u size=%zu quick=%d outstanding=%d\n", m_position, m_chunk_list->size(), quick, m_outstanding);
   LT_LOG_THIS(INFO, "queuing : position:%u outstanding:%i quick:%u", m_position, m_outstanding, quick);
 
   if (!is_checking())
