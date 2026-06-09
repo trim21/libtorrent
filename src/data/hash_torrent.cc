@@ -1,5 +1,6 @@
 #include "config.h"
 
+#include <cstdio>
 #include <cstring>
 
 #include "data/chunk_list.h"
@@ -22,6 +23,7 @@ HashTorrent::HashTorrent(ChunkList* c) :
 
 bool
 HashTorrent::start(bool try_quick) {
+  fprintf(stderr, "[hash] start pos=%u size=%zu quick=%d outstanding=%d\n", m_position, m_chunk_list->size(), try_quick, m_outstanding);
   LT_LOG_THIS(INFO, "start : position:%u size:%zu quick:%u.", m_position, m_chunk_list->size(), try_quick);
 
   if (m_position == m_chunk_list->size())
@@ -158,6 +160,7 @@ HashTorrent::queue(bool quick) {
     // file that hasn't be created/resized. Which means we ignore it
     // when doing initial hashing.
     if (handle.error_number() == ENOMEM) {
+      fprintf(stderr, "[hash] ENOMEM retry pos=%u outstanding=%d\n", m_position, m_outstanding);
       LT_LOG_THIS(INFO, "ENOMEM during hash, retrying: position:%u outstanding:%i", m_position, m_outstanding);
 
       if (m_outstanding == 0)
@@ -207,6 +210,7 @@ HashTorrent::queue(bool quick) {
   }
 
   if (m_outstanding == 0) {
+    fprintf(stderr, "[hash] done pos=%u\n", m_position);
     LT_LOG_THIS(INFO, "completed : position:%u", m_position);
 
     // Update the scheduled item just to make sure that if hashing is
