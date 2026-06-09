@@ -2,11 +2,13 @@
 
 #include <cstdio>
 #include <cstring>
+#include <cinttypes>
 
 #include "data/chunk_list.h"
 #include "torrent/exceptions.h"
 #include "torrent/data/download_data.h"
 #include "torrent/system/system.h"
+#include "torrent/utils/chrono.h"
 #include "torrent/utils/log.h"
 
 #include "hash_torrent.h"
@@ -23,7 +25,8 @@ HashTorrent::HashTorrent(ChunkList* c) :
 
 bool
 HashTorrent::start(bool try_quick) {
-  fprintf(stderr, "[hash] start pos=%u size=%zu quick=%d outstanding=%d\n", m_position, m_chunk_list->size(), try_quick, m_outstanding);
+  fprintf(stderr, "%lld [hash] start pos=%u size=%zu quick=%d outstanding=%d\n", (long long)torrent::utils::time_since_epoch().count(), m_position, m_chunk_list->size(), try_quick, m_outstanding);
+  fflush(stderr);
   LT_LOG_THIS(INFO, "start : position:%u size:%zu quick:%u.", m_position, m_chunk_list->size(), try_quick);
 
   if (m_position == m_chunk_list->size())
@@ -74,7 +77,7 @@ HashTorrent::confirm_checked() {
 
 void
 HashTorrent::receive_chunkdone(uint32_t index) {
-  fprintf(stderr, "[hash] chunkdone idx=%u outstanding=%d\n", index, m_outstanding);
+  fprintf(stderr, "%lld [hash] chunkdone idx=%u outstanding=%d\n", (long long)torrent::utils::time_since_epoch().count(), index, m_outstanding);
   LT_LOG_THIS(DEBUG, "received chunk done: index:%" PRIu32 " outstanding:%i.", index, m_outstanding);
 
   if (m_outstanding <= 0)
@@ -109,7 +112,7 @@ HashTorrent::receive_chunk_cleared(uint32_t index) {
 
 void
 HashTorrent::queue(bool quick) {
-  fprintf(stderr, "[hash] queue pos=%u size=%zu quick=%d outstanding=%d\n", m_position, m_chunk_list->size(), quick, m_outstanding);
+  fprintf(stderr, "%lld [hash] queue pos=%u size=%zu quick=%d outstanding=%d\n", (long long)torrent::utils::time_since_epoch().count(), m_position, m_chunk_list->size(), quick, m_outstanding);
   LT_LOG_THIS(INFO, "queuing : position:%u outstanding:%i quick:%u", m_position, m_outstanding, quick);
 
   if (!is_checking())
@@ -162,7 +165,7 @@ HashTorrent::queue(bool quick) {
     // file that hasn't be created/resized. Which means we ignore it
     // when doing initial hashing.
     if (handle.error_number() == ENOMEM) {
-      fprintf(stderr, "[hash] ENOMEM retry pos=%u outstanding=%d\n", m_position, m_outstanding);
+      fprintf(stderr, "%lld [hash] ENOMEM retry pos=%u outstanding=%d\n", (long long)torrent::utils::time_since_epoch().count(), m_position, m_outstanding);
       LT_LOG_THIS(INFO, "ENOMEM during hash, retrying: position:%u outstanding:%i", m_position, m_outstanding);
 
       if (m_outstanding == 0)
@@ -212,7 +215,7 @@ HashTorrent::queue(bool quick) {
   }
 
   if (m_outstanding == 0) {
-    fprintf(stderr, "[hash] done pos=%u\n", m_position);
+    fprintf(stderr, "%lld [hash] done pos=%u\n", (long long)torrent::utils::time_since_epoch().count(), m_position);
     LT_LOG_THIS(INFO, "completed : position:%u", m_position);
 
     // Update the scheduled item just to make sure that if hashing is

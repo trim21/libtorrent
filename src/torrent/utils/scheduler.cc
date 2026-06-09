@@ -5,9 +5,12 @@
 #include <algorithm>
 #include <cassert>
 #include <cstddef>
+#include <cstdio>
 
 #include "torrent/exceptions.h"
 #include "torrent/utils/chrono.h"
+
+#include <cinttypes>
 
 namespace torrent::utils {
 
@@ -217,6 +220,8 @@ Scheduler::update_wait_for_ceil_seconds(SchedulerEntry* entry, Scheduler::time_t
 
 void
 Scheduler::perform(Scheduler::time_type current_time) {
+  fprintf(stderr, "%lld [sched] perform size=%zu cur=%lld\n",
+          (long long)time_since_epoch().count(), size(), (long long)current_time.count()); fflush(stderr);
   while (!empty() && base_type::operator[](0)->time() <= current_time) {
     auto entry = base_type::operator[](0);
     assert(entry != nullptr);
