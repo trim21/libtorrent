@@ -140,7 +140,7 @@ Download::stop(int flags) {
 
 bool
 Download::hash_check(bool try_quick) {
-  fprintf(stderr, "[hash] check start infohash=%s quick=%d\n", m_ptr->info()->hash().to_string().c_str(), try_quick);
+  fprintf(stderr, "[hash] check start infohash=%s quick=%d\n", m_ptr->info()->hash().str().c_str(), try_quick);
   if (m_ptr->hash_checker()->is_checking())
     throw internal_error("Download::hash_check(...) called but the hash is already being checked.");
 
