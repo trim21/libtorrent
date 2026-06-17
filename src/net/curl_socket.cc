@@ -59,30 +59,7 @@ static long g_diag_last_read_count;
 static time_t g_diag_last_report;
 
 static void diag_report(time_t now) {
-    if (g_diag_last_report == 0)
-        g_diag_last_report = now;
-    if (now == g_diag_last_report)
-        return;
-    long dt = (long)(now - g_diag_last_report);
-
-    char buf[256];
-    int n = snprintf(buf, sizeof(buf),
-        "[curl_diag t=%ld] IN=%ld OUT=%ld INOUT=%ld "
-        "REMOVE=%ld NONE=%ld "
-        "event_read=%ld/write=%ld/err=%ld "
-        "hot_fd=%d(hit=%ld) ",
-        dt, g_diag_poll_in, g_diag_poll_out, g_diag_poll_inout,
-        g_diag_poll_remove, g_diag_poll_none,
-        g_diag_event_read, g_diag_event_write, g_diag_event_error,
-        g_diag_last_read_fd, g_diag_last_read_count);
-    ::write(STDERR_FILENO, buf, n);
-
-    char sigbuf[256];
-    ::__diag_format_signal_counts(sigbuf, sizeof(sigbuf));
-    ::write(STDERR_FILENO, sigbuf, strlen(sigbuf));
-    ::write(STDERR_FILENO, "\n", 1);
-
-    g_diag_last_report = now;
+    (void)now;
 }
 
 static void diag_track_read(int fd) {
@@ -487,7 +464,6 @@ CurlSocket::event_read() {
 void
 CurlSocket::event_write() {
   g_diag_event_write++;
-  diag_report(time(nullptr));
   handle_action(CURL_CSELECT_OUT);
 }
 
@@ -503,7 +479,6 @@ CurlSocket::event_write() {
 void
 CurlSocket::event_error() {
   g_diag_event_error++;
-  diag_report(time(nullptr));
   LT_LOG_DEBUG_THIS("event_error()", 0);
 
   // LibCurl will close the socket, so remove it from polling prior to passing the error event.
