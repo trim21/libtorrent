@@ -15,10 +15,6 @@
 #include "torrent/runtime/socket_manager.h"
 #include "torrent/utils/log.h"
 
-extern "C" {
-__attribute__((visibility("default"))) void __diag_format_signal_counts(char* buf, int sz);
-}
-
 #if 0
 
 #define LT_LOG_DEBUG(log_fmt, ...)
@@ -93,19 +89,10 @@ static void diag_track_read(int fd) {
     g_diag_event_read++;
     if (fd == g_diag_last_read_fd) {
         g_diag_last_read_count++;
-        /* Busy-loop detection: same fd >1000 reads in a row */
-        if (g_diag_last_read_count == 1000) {
-            char buf[128];
-            int n = snprintf(buf, sizeof(buf),
-                "[curl_diag BUSY-LOOP?] fd=%d read_count=%ld\n",
-                fd, g_diag_last_read_count);
-            ::write(STDERR_FILENO, buf, n);
-        }
     } else {
         g_diag_last_read_fd = fd;
         g_diag_last_read_count = 1;
     }
-    diag_report(time(nullptr));
 }
 
 // ──────────────────────────────────────────────────────────────────────
