@@ -3,6 +3,8 @@
 #include "curl_socket.h"
 
 #include <cassert>
+#include <cstdio>
+#include <ctime>
 #include <unistd.h>
 #include <curl/multi.h>
 
@@ -41,6 +43,62 @@
 
 namespace torrent::net {
 
+// ── diagnostic counters ──────────────────────────────────────────────
+
+static long g_diag_poll_in;
+static long g_diag_poll_out;
+static long g_diag_poll_inout;
+static long g_diag_poll_remove;
+static long g_diag_poll_none;
+static long g_diag_event_read;
+static long g_diag_event_write;
+static long g_diag_event_error;
+
+static int  g_diag_last_read_fd = -1;
+static long g_diag_last_read_count;
+static time_t g_diag_last_report;
+
+static void diag_report(time_t now) {
+    if (g_diag_last_report == 0)
+        g_diag_last_report = now;
+    if (now == g_diag_last_report)
+        return;
+    long dt = (long)(now - g_diag_last_report);
+    char buf[256];
+    int n = snprintf(buf, sizeof(buf),
+        "[curl_diag t=%ld] IN=%ld OUT=%ld INOUT=%ld "
+        "REMOVE=%ld NONE=%ld "
+        "event_read=%ld/write=%ld/err=%ld "
+        "hot_fd=%d(hit=%ld)\n",
+        dt, g_diag_poll_in, g_diag_poll_out, g_diag_poll_inout,
+        g_diag_poll_remove, g_diag_poll_none,
+        g_diag_event_read, g_diag_event_write, g_diag_event_error,
+        g_diag_last_read_fd, g_diag_last_read_count);
+    ::write(STDERR_FILENO, buf, n);
+    g_diag_last_report = now;
+}
+
+static void diag_track_read(int fd) {
+    g_diag_event_read++;
+    if (fd == g_diag_last_read_fd) {
+        g_diag_last_read_count++;
+        /* Busy-loop detection: same fd >1000 reads in a row */
+        if (g_diag_last_read_count == 1000) {
+            char buf[128];
+            int n = snprintf(buf, sizeof(buf),
+                "[curl_diag BUSY-LOOP?] fd=%d read_count=%ld\n",
+                fd, g_diag_last_read_count);
+            ::write(STDERR_FILENO, buf, n);
+        }
+    } else {
+        g_diag_last_read_fd = fd;
+        g_diag_last_read_count = 1;
+    }
+    diag_report(time(nullptr));
+}
+
+// ──────────────────────────────────────────────────────────────────────
+
 CurlSocket::CurlSocket(int fd, CurlStack* stack, CURL* easy_handle)
   : m_stack(stack),
     m_easy_handle(easy_handle) {
@@ -73,6 +131,7 @@ CurlSocket::receive_socket(CURL* easy_handle, curl_socket_t fd, int what, CurlSt
   }
 
   if (what == CURL_POLL_REMOVE) {
+    g_diag_poll_remove++;
     // When libcurl closes a socket in the idle connection poll, it calls receive_socket() with a
     // null socket.
 
@@ -208,6 +267,7 @@ CurlSocket::receive_socket(CURL* easy_handle, curl_socket_t fd, int what, CurlSt
   // TODO: Should we also always check SocketManager?
 
   if (what == CURL_POLL_NONE) {
+    g_diag_poll_none++;
     // Handle uninterested sockets before checking addresses, as the server tends to close
     // connections right after completing requests. (which invalidates the peer name)
     LT_LOG_DEBUG_SOCKET_FD_HANDLE("receive_socket(CURL_POLL_NONE) : removing read and write", 0);
@@ -248,18 +308,21 @@ CurlSocket::receive_socket(CURL* easy_handle, curl_socket_t fd, int what, CurlSt
 
   switch (what) {
   case CURL_POLL_IN:
+    g_diag_poll_in++;
     LT_LOG_DEBUG_SOCKET_FD_HANDLE("receive_socket(CURL_POLL_IN) : inserting read, removing write", 0);
     this_thread::poll()->insert_read(socket);
     this_thread::poll()->remove_write(socket);
     break;
 
   case CURL_POLL_OUT:
+    g_diag_poll_out++;
     LT_LOG_DEBUG_SOCKET_FD_HANDLE("receive_socket(CURL_POLL_OUT) : inserting write, removing read", 0);
     this_thread::poll()->insert_write(socket);
     this_thread::poll()->remove_read(socket);
     break;
 
   case CURL_POLL_INOUT:
+    g_diag_poll_inout++;
     LT_LOG_DEBUG_SOCKET_FD_HANDLE("receive_socket(CURL_POLL_INOUT) : inserting read and write", 0);
     this_thread::poll()->insert_read(socket);
     this_thread::poll()->insert_write(socket);
@@ -419,12 +482,14 @@ CurlSocket::close_socket(CurlStack* stack, curl_socket_t fd) {
 
 void
 CurlSocket::event_read() {
-  // TODO: Use MSG_PEEK to check if we're in idle connection poll and close this fd.
+  diag_track_read(file_descriptor());
   handle_action(CURL_CSELECT_IN);
 }
 
 void
 CurlSocket::event_write() {
+  g_diag_event_write++;
+  diag_report(time(nullptr));
   handle_action(CURL_CSELECT_OUT);
 }
 
@@ -439,6 +504,8 @@ CurlSocket::event_write() {
 
 void
 CurlSocket::event_error() {
+  g_diag_event_error++;
+  diag_report(time(nullptr));
   LT_LOG_DEBUG_THIS("event_error()", 0);
 
   // LibCurl will close the socket, so remove it from polling prior to passing the error event.
