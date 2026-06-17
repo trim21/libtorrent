@@ -5,7 +5,6 @@
 #include <atomic>
 #include <chrono>
 #include <cstdio>
-#include <cstring>
 #include <unistd.h>
 
 #ifdef USE_EPOLL
@@ -143,61 +142,3 @@ EventFd::event_error() {
 }
 
 } // namespace torrent::net
-
-// ── diagnostic: cross-thread callback tracking ────────────────────────
-
-#include <atomic>
-#include <cstdio>
-#include <cstring>
-
-struct diag_cb_bucket {
-  std::atomic<uint64_t> count;
-  char                  target[32];
-  char                  caller[32];
-  bool                  intr;
-};
-
-static constexpr int kDiagCbBuckets = 64;
-static diag_cb_bucket g_cb_buckets[kDiagCbBuckets];
-static std::atomic<int> g_cb_next_bucket;
-
-__attribute__((visibility("default"))) extern "C" void
-__diag_track_callback(const char* target, const char* caller, bool is_intr) {
-  int idx{};
-  for (int i = 0; i < kDiagCbBuckets; i++) {
-    if (g_cb_buckets[i].intr == is_intr &&
-        std::strcmp(g_cb_buckets[i].target, target) == 0 &&
-        std::strcmp(g_cb_buckets[i].caller, caller) == 0) {
-      g_cb_buckets[i].count.fetch_add(1);
-      return;
-    }
-    if (g_cb_buckets[i].target[0] == '\0' && idx == 0) idx = i;
-  }
-
-  if (idx == 0) idx = g_cb_next_bucket.fetch_add(1) % kDiagCbBuckets;
-  std::strncpy(g_cb_buckets[idx].target, target, 31);
-  std::strncpy(g_cb_buckets[idx].caller, caller, 31);
-  g_cb_buckets[idx].intr = is_intr;
-  g_cb_buckets[idx].count.store(1);
-
-  char buf[128];
-  int n = snprintf(buf, sizeof(buf),
-    "[cb_new] target=%s caller=%s intr=%d\n", target, caller, (int)is_intr);
-  ::write(STDERR_FILENO, buf, n);
-}
-
-__attribute__((visibility("default"))) extern "C" void
-__diag_dump_callbacks() {
-  char buf[256];
-  int n = snprintf(buf, sizeof(buf), "[cb_dump] ");
-  ::write(STDERR_FILENO, buf, n);
-  for (int i = 0; i < kDiagCbBuckets; i++) {
-    auto c = g_cb_buckets[i].count.load();
-    if (c == 0) continue;
-    n = snprintf(buf, sizeof(buf), "%s->%s(%c)=%lu ",
-                 g_cb_buckets[i].caller, g_cb_buckets[i].target,
-                 g_cb_buckets[i].intr ? 'I' : 'N', (unsigned long)c);
-    ::write(STDERR_FILENO, buf, n);
-  }
-  ::write(STDERR_FILENO, "\n", 1);
-}

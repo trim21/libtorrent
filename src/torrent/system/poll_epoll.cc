@@ -7,7 +7,6 @@
 #include <atomic>
 #include <cassert>
 #include <chrono>
-#include <cstdio>
 #include <unistd.h>
 #include <sys/epoll.h>
 
@@ -212,16 +211,7 @@ Poll::do_interrupt() {
     return;
 
   static std::atomic<uint64_t> g_do_intr_count;
-  auto c = g_do_intr_count.fetch_add(1) + 1;
-  if (c <= 30 || c % 1000 == 0) {
-    auto now = std::chrono::duration_cast<std::chrono::microseconds>(
-      std::chrono::steady_clock::now().time_since_epoch()).count();
-    char buf[128];
-    int n = snprintf(buf, sizeof(buf),
-      "[do_intr] count=%lu caller=%s ts=%ld\n",
-      (unsigned long)c, this_thread::thread_name(), (long)now);
-    ::write(STDERR_FILENO, buf, n);
-  }
+  g_do_intr_count.fetch_add(1, std::memory_order_relaxed);
 
   m_internal->m_wake_event.send_signal();
 }
