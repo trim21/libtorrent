@@ -69,8 +69,6 @@ static void diag_report(time_t now) {
         return;
     long dt = (long)(now - g_diag_last_report);
 
-    extern void __diag_format_signal_counts(char* buf, int sz);
-
     char buf[256];
     int n = snprintf(buf, sizeof(buf),
         "[curl_diag t=%ld] IN=%ld OUT=%ld INOUT=%ld "
@@ -84,7 +82,7 @@ static void diag_report(time_t now) {
     ::write(STDERR_FILENO, buf, n);
 
     char sigbuf[256];
-    __diag_format_signal_counts(sigbuf, sizeof(sigbuf));
+    ::__diag_format_signal_counts(sigbuf, sizeof(sigbuf));
     ::write(STDERR_FILENO, sigbuf, strlen(sigbuf));
     ::write(STDERR_FILENO, "\n", 1);
 
