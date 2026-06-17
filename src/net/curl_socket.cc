@@ -64,16 +64,21 @@ static void diag_report(time_t now) {
     if (now == g_diag_last_report)
         return;
     long dt = (long)(now - g_diag_last_report);
+
+    extern std::atomic<uint64_t> g_diag_signal_count;
+    uint64_t sig = g_diag_signal_count.load(std::memory_order_relaxed);
+
     char buf[256];
     int n = snprintf(buf, sizeof(buf),
         "[curl_diag t=%ld] IN=%ld OUT=%ld INOUT=%ld "
         "REMOVE=%ld NONE=%ld "
         "event_read=%ld/write=%ld/err=%ld "
-        "hot_fd=%d(hit=%ld)\n",
+        "hot_fd=%d(hit=%ld) sig=%lu\n",
         dt, g_diag_poll_in, g_diag_poll_out, g_diag_poll_inout,
         g_diag_poll_remove, g_diag_poll_none,
         g_diag_event_read, g_diag_event_write, g_diag_event_error,
-        g_diag_last_read_fd, g_diag_last_read_count);
+        g_diag_last_read_fd, g_diag_last_read_count,
+        (unsigned long)sig);
     ::write(STDERR_FILENO, buf, n);
     g_diag_last_report = now;
 }

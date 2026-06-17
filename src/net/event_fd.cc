@@ -3,8 +3,6 @@
 #include "net/event_fd.h"
 
 #include <atomic>
-#include <chrono>
-#include <cstdio>
 #include <unistd.h>
 
 #ifdef USE_EPOLL
@@ -17,26 +15,10 @@
 
 namespace torrent::net {
 
-// ── diagnostic: track which thread sends signals to which eventfd ─────
+// ── diagnostic counters (readable via /proc/pid/mem or gdb) ───────────
 
-static std::atomic<uint64_t> g_signal_count;
-static thread_local uint64_t t_signal_count;
-
-static void
-diag_log_signal(const char* who_sent) {
-  auto count = g_signal_count.fetch_add(1) + 1;
-  auto tcnt  = ++t_signal_count;
-
-  if (tcnt <= 50 || tcnt % 5000 == 0) {
-    auto now = std::chrono::duration_cast<std::chrono::microseconds>(
-      std::chrono::steady_clock::now().time_since_epoch()).count();
-    char buf[128];
-    int n = snprintf(buf, sizeof(buf),
-      "[evfd_sig] total=%lu tid=%s local=%lu ts=%ld\n",
-      (unsigned long)count, who_sent, (unsigned long)tcnt, (long)now);
-    ::write(STDERR_FILENO, buf, n);
-  }
-}
+std::atomic<uint64_t> g_diag_signal_count;
+thread_local uint64_t g_diag_signal_local;
 
 void
 EventFd::add_to_poll() {
@@ -72,7 +54,8 @@ EventFd::remove_from_poll(system::Poll* poll) {
 // Poll uses a state flag to ensure we only send a signal once per interrupt.
 void
 EventFd::send_signal() {
-  diag_log_signal(this_thread::thread_name());
+  g_diag_signal_count.fetch_add(1, std::memory_order_relaxed);
+  g_diag_signal_local++;
 
   uint64_t value = 1;
 
