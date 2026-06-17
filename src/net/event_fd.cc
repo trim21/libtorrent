@@ -169,7 +169,7 @@ static constexpr int kDiagCbBuckets = 64;
 static diag_cb_bucket g_cb_buckets[kDiagCbBuckets];
 static std::atomic<int> g_cb_next_bucket;
 
-void
+__attribute__((visibility("default"))) void
 __diag_track_callback(const char* target, const char* caller, bool is_intr) {
   int idx{};
   for (int i = 0; i < kDiagCbBuckets; i++) {
@@ -195,7 +195,7 @@ __diag_track_callback(const char* target, const char* caller, bool is_intr) {
   }
 }
 
-void
+__attribute__((visibility("default"))) void
 __diag_dump_callbacks() {
   FILE* fp = fopen("/tmp/eventfd_diag.log", "a");
   if (!fp) return;
