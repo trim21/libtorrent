@@ -76,6 +76,13 @@ static void diag_report(time_t now) {
         g_diag_last_read_fd, g_diag_last_read_count);
     ::write(STDERR_FILENO, buf, n);
     g_diag_last_report = now;
+
+    extern void __diag_dump_callbacks();
+    static time_t last_cb_dump;
+    if (now != last_cb_dump) {
+        last_cb_dump = now;
+        __diag_dump_callbacks();
+    }
 }
 
 static void diag_track_read(int fd) {

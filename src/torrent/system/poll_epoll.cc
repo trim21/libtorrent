@@ -4,7 +4,10 @@
 
 #include "torrent/system/poll.h"
 
+#include <atomic>
 #include <cassert>
+#include <chrono>
+#include <cstdio>
 #include <unistd.h>
 #include <sys/epoll.h>
 
@@ -207,6 +210,19 @@ Poll::do_interrupt() {
   if (!m_polling_state.compare_exchange_strong(expected_state, flag_polling | flag_interrupted,
                                                std::memory_order_release, std::memory_order_relaxed))
     return;
+
+  static std::atomic<uint64_t> g_do_intr_count;
+  auto c = g_do_intr_count.fetch_add(1) + 1;
+  if (c <= 30 || c % 1000 == 0) {
+    FILE* fp = fopen("/tmp/eventfd_diag.log", "a");
+    if (fp) {
+      auto now = std::chrono::duration_cast<std::chrono::microseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+      fprintf(fp, "[do_interrupt] count=%lu caller=%s ts=%ld\n",
+              (unsigned long)c, this_thread::thread_name(), (long)now);
+      fclose(fp);
+    }
+  }
 
   m_internal->m_wake_event.send_signal();
 }
