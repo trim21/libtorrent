@@ -77,11 +77,11 @@ static void diag_report(time_t now) {
     ::write(STDERR_FILENO, buf, n);
     g_diag_last_report = now;
 
-    extern void __diag_dump_callbacks();
+    extern "C" __attribute__((visibility("default"))) void __diag_dump_callbacks();
     static time_t last_cb_dump;
     if (now != last_cb_dump) {
         last_cb_dump = now;
-        ::__diag_dump_callbacks();
+        __diag_dump_callbacks();
     }
 }
 
