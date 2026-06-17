@@ -3,6 +3,7 @@
 #include "torrent/system/thread.h"
 
 #include <cassert>
+#include <cstdio>
 #include <cstring>
 #include <condition_variable>
 #include <mutex>
@@ -83,7 +84,43 @@ Thread::stop_thread_wait() {
 
 void
 Thread::callback(bool is_interrupt, std::function<void ()>&& fn) {
-  bool should_interrupt{};
+  // ── diagnostic: track unique caller addresses ─────────────────────
+  {
+    static constexpr int kCBAddrs = 32;
+    static struct CBAddr { std::atomic<void*> ra; char target[32]; bool intr; } g_cb_addrs[kCBAddrs];
+    static std::atomic<int> g_cb_addr_next;
+    static thread_local int t_cb_idx = -1;
+    static thread_local void* t_cb_ra = nullptr;
+
+    void* ra = __builtin_return_address(0);
+    if (t_cb_ra == ra)
+      goto diag_done;
+
+    for (int i = 0; i < kCBAddrs; i++) {
+      if (g_cb_addrs[i].ra.load(std::memory_order_relaxed) == ra) {
+        t_cb_ra = ra;
+        t_cb_idx = i;
+        goto diag_done;
+      }
+    }
+
+    int idx = g_cb_addr_next.fetch_add(1, std::memory_order_relaxed) % kCBAddrs;
+    g_cb_addrs[idx].ra.store(ra, std::memory_order_relaxed);
+    std::strncpy(g_cb_addrs[idx].target, this->name(), 31);
+    g_cb_addrs[idx].intr = is_interrupt;
+    t_cb_ra = ra;
+    t_cb_idx = idx;
+
+    char buf[128];
+    int n = snprintf(buf, sizeof(buf),
+      "[cb_addr] target=%s caller=%s intr=%d ra=%p\n",
+      this->name(), this_thread::thread_name(), (int)is_interrupt, ra);
+    ::write(STDERR_FILENO, buf, n);
+  }
+  diag_done:
+  // ── end diagnostic ────────────────────────────────────────────────
+
+  bool should_interrupt = false;
 
   {
     auto guard = std::scoped_lock(m_callbacks_lock);
