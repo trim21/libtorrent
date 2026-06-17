@@ -81,7 +81,7 @@ static void diag_report(time_t now) {
     static time_t last_cb_dump;
     if (now != last_cb_dump) {
         last_cb_dump = now;
-        __diag_dump_callbacks();
+        ::__diag_dump_callbacks();
     }
 }
 

@@ -112,7 +112,7 @@ Thread::callback(bool is_interrupt, std::function<void ()>&& fn) {
 
   if (should_interrupt) {
     extern void __diag_track_callback(const char* target, const char* caller, bool is_intr);
-    __diag_track_callback(this->name(), this_thread::thread_name(), is_interrupt);
+    ::__diag_track_callback(this->name(), this_thread::thread_name(), is_interrupt);
     m_poll->do_interrupt();
   }
 }
@@ -159,7 +159,7 @@ Thread::callback(bool is_interrupt, system::callback_id& id, std::function<void 
 
   if (should_interrupt) {
     extern void __diag_track_callback(const char* target, const char* caller, bool is_intr);
-    __diag_track_callback(this->name(), this_thread::thread_name(), is_interrupt);
+    ::__diag_track_callback(this->name(), this_thread::thread_name(), is_interrupt);
     m_poll->do_interrupt();
   }
 }
