@@ -15,6 +15,10 @@
 #include "torrent/runtime/socket_manager.h"
 #include "torrent/utils/log.h"
 
+extern "C" {
+__attribute__((visibility("default"))) void __diag_format_signal_counts(char* buf, int sz);
+}
+
 #if 0
 
 #define LT_LOG_DEBUG(log_fmt, ...)
@@ -65,21 +69,25 @@ static void diag_report(time_t now) {
         return;
     long dt = (long)(now - g_diag_last_report);
 
-    extern std::atomic<uint64_t> g_diag_signal_count;
-    uint64_t sig = g_diag_signal_count.load(std::memory_order_relaxed);
+    extern void __diag_format_signal_counts(char* buf, int sz);
 
     char buf[256];
     int n = snprintf(buf, sizeof(buf),
         "[curl_diag t=%ld] IN=%ld OUT=%ld INOUT=%ld "
         "REMOVE=%ld NONE=%ld "
         "event_read=%ld/write=%ld/err=%ld "
-        "hot_fd=%d(hit=%ld) sig=%lu\n",
+        "hot_fd=%d(hit=%ld) ",
         dt, g_diag_poll_in, g_diag_poll_out, g_diag_poll_inout,
         g_diag_poll_remove, g_diag_poll_none,
         g_diag_event_read, g_diag_event_write, g_diag_event_error,
-        g_diag_last_read_fd, g_diag_last_read_count,
-        (unsigned long)sig);
+        g_diag_last_read_fd, g_diag_last_read_count);
     ::write(STDERR_FILENO, buf, n);
+
+    char sigbuf[256];
+    __diag_format_signal_counts(sigbuf, sizeof(sigbuf));
+    ::write(STDERR_FILENO, sigbuf, strlen(sigbuf));
+    ::write(STDERR_FILENO, "\n", 1);
+
     g_diag_last_report = now;
 }
 
