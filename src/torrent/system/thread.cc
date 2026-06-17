@@ -18,6 +18,10 @@
 #include "utils/instrumentation.h"
 #include "utils/thread_internal.h"
 
+extern "C" {
+__attribute__((visibility("default"))) void __diag_track_callback(const char*, const char*, bool);
+}
+
 namespace torrent::system {
 
 thread_local Thread* Thread::m_self{};
@@ -111,7 +115,6 @@ Thread::callback(bool is_interrupt, std::function<void ()>&& fn) {
   }
 
   if (should_interrupt) {
-    extern "C" __attribute__((visibility("default"))) void __diag_track_callback(const char*, const char*, bool);
     __diag_track_callback(this->name(), this_thread::thread_name(), is_interrupt);
     m_poll->do_interrupt();
   }
@@ -158,7 +161,6 @@ Thread::callback(bool is_interrupt, system::callback_id& id, std::function<void 
   id->notify_all();
 
   if (should_interrupt) {
-    extern "C" __attribute__((visibility("default"))) void __diag_track_callback(const char*, const char*, bool);
     __diag_track_callback(this->name(), this_thread::thread_name(), is_interrupt);
     m_poll->do_interrupt();
   }

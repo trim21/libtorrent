@@ -15,6 +15,10 @@
 #include "torrent/runtime/socket_manager.h"
 #include "torrent/utils/log.h"
 
+extern "C" {
+__attribute__((visibility("default"))) void __diag_dump_callbacks();
+}
+
 #if 0
 
 #define LT_LOG_DEBUG(log_fmt, ...)
@@ -77,7 +81,6 @@ static void diag_report(time_t now) {
     ::write(STDERR_FILENO, buf, n);
     g_diag_last_report = now;
 
-    extern "C" __attribute__((visibility("default"))) void __diag_dump_callbacks();
     static time_t last_cb_dump;
     if (now != last_cb_dump) {
         last_cb_dump = now;
