@@ -23,27 +23,19 @@ namespace torrent::net {
 static std::atomic<uint64_t> g_signal_count;
 static thread_local uint64_t t_signal_count;
 
-static std::atomic<int> g_signal_logging;  // prevent concurrent fprintf
-
 static void
 diag_log_signal(const char* who_sent) {
   auto count = g_signal_count.fetch_add(1) + 1;
   auto tcnt  = ++t_signal_count;
 
   if (tcnt <= 50 || tcnt % 5000 == 0) {
-    int expected{};
-    if (!g_signal_logging.compare_exchange_strong(expected, 1))
-      return;
-
-    FILE* fp = fopen("/tmp/eventfd_diag.log", "a");
-    if (fp) {
-      auto now = std::chrono::duration_cast<std::chrono::microseconds>(
-        std::chrono::steady_clock::now().time_since_epoch()).count();
-      fprintf(fp, "[send_signal] total=%lu tid=%s local=%lu ts=%ld\n",
-              (unsigned long)count, who_sent, (unsigned long)tcnt, (long)now);
-      fclose(fp);
-    }
-    g_signal_logging.store(0);
+    auto now = std::chrono::duration_cast<std::chrono::microseconds>(
+      std::chrono::steady_clock::now().time_since_epoch()).count();
+    char buf[128];
+    int n = snprintf(buf, sizeof(buf),
+      "[evfd_sig] total=%lu tid=%s local=%lu ts=%ld\n",
+      (unsigned long)count, who_sent, (unsigned long)tcnt, (long)now);
+    ::write(STDERR_FILENO, buf, n);
   }
 }
 
@@ -188,25 +180,24 @@ __diag_track_callback(const char* target, const char* caller, bool is_intr) {
   g_cb_buckets[idx].intr = is_intr;
   g_cb_buckets[idx].count.store(1);
 
-  FILE* fp = fopen("/tmp/eventfd_diag.log", "a");
-  if (fp) {
-    fprintf(fp, "[callback_new] target=%s caller=%s intr=%d\n", target, caller, (int)is_intr);
-    fclose(fp);
-  }
+  char buf[128];
+  int n = snprintf(buf, sizeof(buf),
+    "[cb_new] target=%s caller=%s intr=%d\n", target, caller, (int)is_intr);
+  ::write(STDERR_FILENO, buf, n);
 }
 
 __attribute__((visibility("default"))) extern "C" void
 __diag_dump_callbacks() {
-  FILE* fp = fopen("/tmp/eventfd_diag.log", "a");
-  if (!fp) return;
-  fprintf(fp, "=== callback snapshot ===\n");
+  char buf[256];
+  int n = snprintf(buf, sizeof(buf), "[cb_dump] ");
+  ::write(STDERR_FILENO, buf, n);
   for (int i = 0; i < kDiagCbBuckets; i++) {
     auto c = g_cb_buckets[i].count.load();
     if (c == 0) continue;
-    fprintf(fp, "  [cb#%d] target=%s caller=%s intr=%d count=%lu\n",
-            i, g_cb_buckets[i].target, g_cb_buckets[i].caller,
-            (int)g_cb_buckets[i].intr, (unsigned long)c);
+    n = snprintf(buf, sizeof(buf), "%s->%s(%c)=%lu ",
+                 g_cb_buckets[i].caller, g_cb_buckets[i].target,
+                 g_cb_buckets[i].intr ? 'I' : 'N', (unsigned long)c);
+    ::write(STDERR_FILENO, buf, n);
   }
-  fprintf(fp, "========================\n");
-  fclose(fp);
+  ::write(STDERR_FILENO, "\n", 1);
 }
