@@ -156,6 +156,42 @@ void
 Thread::callback(bool is_interrupt, system::callback_id& id, std::function<void ()>&& fn) {
   assert(id != nullptr);
 
+  // ── diagnostic: track unique caller addresses ─────────────────────
+  {
+    static constexpr int kCBAddrs = 32;
+    static struct CBAddr { std::atomic<void*> ra; char target[32]; bool intr; } g_cb_addrs[kCBAddrs];
+    static std::atomic<int> g_cb_addr_next;
+    static thread_local int t_cb_idx = -1;
+    static thread_local void* t_cb_ra2 = nullptr;
+
+    void* ra = __builtin_return_address(0);
+    if (t_cb_ra2 == ra)
+      goto diag_done2;
+
+    for (int i = 0; i < kCBAddrs; i++) {
+      if (g_cb_addrs[i].ra.load(std::memory_order_relaxed) == ra) {
+        t_cb_ra2 = ra;
+        t_cb_idx = i;
+        goto diag_done2;
+      }
+    }
+
+    int idx = g_cb_addr_next.fetch_add(1, std::memory_order_relaxed) % kCBAddrs;
+    g_cb_addrs[idx].ra.store(ra, std::memory_order_relaxed);
+    std::strncpy(g_cb_addrs[idx].target, this->name(), 31);
+    g_cb_addrs[idx].intr = is_interrupt;
+    t_cb_ra2 = ra;
+    t_cb_idx = idx;
+
+    char buf[128];
+    int n = snprintf(buf, sizeof(buf),
+      "[cb_addr] target=%s caller=%s intr=%d ra=%p\n",
+      this->name(), this_thread::thread_name(), (int)is_interrupt, ra);
+    ::write(STDERR_FILENO, buf, n);
+  }
+  diag_done2:
+  // ── end diagnostic ────────────────────────────────────────────────
+
   // Ensure adding callbacks for the id are completed before cancel-wait can proceed.
   auto previous_id = id->fetch_add(1, std::memory_order_relaxed);
 
